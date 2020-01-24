@@ -1,0 +1,8 @@
+Batch:                   32
+
+Time per epoch:          0:12:23.194177
+Total epochs:            65
+Best epoch               50
+
+Training loss:           6.473635372362639
+Validation loss:         28.536664962768555
