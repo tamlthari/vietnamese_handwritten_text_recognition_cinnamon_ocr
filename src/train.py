@@ -177,7 +177,7 @@ if __name__ == "__main__":
     if args.trainquoc:
         train_ds, num_steps_train, _ = build_dataset('train', cache=True)
         test_ds, num_steps_val, _ = build_dataset('test', training=False)
-        model = mb.build_model(input_size=INPUT_SIZE, d_model=vocab_size+1, learning_rate=0.001)
+        model = mb.build_model_quoc(input_size=INPUT_SIZE, d_model=vocab_size+1, learning_rate=0.001)
 #         model.load_weights(checkpoint)
         model.summary()
         batch_stats_callback = mb.CollectBatchStats()

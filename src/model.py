@@ -12,6 +12,8 @@ from tensorflow.keras.layers import Conv2D, Bidirectional, LSTM, GRU, Dense
 from tensorflow.keras.layers import Dropout, BatchNormalization, LeakyReLU, PReLU
 from tensorflow.keras.layers import Input, MaxPooling2D, Reshape, MaxPool2D, Lambda
 from tensorflow.keras.layers import multiply, Permute, Lambda, RepeatVector
+from tensorflow.keras import applications
+from tensorflow.keras.models import Sequential
 
 import matplotlib.pyplot as plt
 
@@ -118,6 +120,55 @@ def attention_rnn(inputs):
     a_probs = Permute((2, 1), name='attention_vec')(a)
     output_attention_mul = multiply([inputs, a_probs], name='attention_mul')
     return output_attention_mul
+
+def maxpooling(base_model):
+    model = Sequential(name='vgg16')
+    for layer in base_model.layers[:-1]:
+        if 'pool' in layer.name:
+            pooling_layer = MaxPooling2D(pool_size=(2, 2), name=layer.name)
+            model.add(pooling_layer)
+        else:
+            model.add(layer)
+    return model
+
+def build_model_quoc(input_size, d_model, learning_rate=3e-4):
+    """
+    Reference: attention layer as per Quoc. https://github.com/pbcquoc/vietnamese_ocr
+
+    """
+
+    input_data = Input(name='input', shape=input_size, dtype='float32')
+    base_model = applications.VGG16(weights='imagenet', include_top=False)
+    base_model = maxpooling(base_model)
+    inner = base_model(input_data)
+
+    #Adding attention
+    shape = inner.get_shape()
+    attn = Reshape((shape[1], shape[2] * shape[3]))(inner)
+
+    # attn = Reshape(target_shape=(int(cnn.shape[1]), -1), name='reshape')(cnn)
+    attn = Dense(512, activation='relu', kernel_initializer='he_normal', name='dense1')(attn) 
+    attn = Dropout(0.25)(attn) 
+    attn = attention_rnn(attn)
+
+
+    blstm = Bidirectional(LSTM(units=256, return_sequences=True, kernel_initializer='he_normal', dropout=0.5))(attn)
+    blstm = Bidirectional(LSTM(units=256, return_sequences=True, kernel_initializer='he_normal', dropout=0.5))(blstm)
+    blstm = Bidirectional(LSTM(units=256, return_sequences=True, kernel_initializer='he_normal', dropout=0.5))(blstm)
+#     blstm = Bidirectional(LSTM(units=256, return_sequences=True, dropout=0.5))(blstm)
+#     blstm = Bidirectional(LSTM(units=256, return_sequences=True, dropout=0.5))(blstm)
+
+    blstm = Dropout(rate=0.5)(blstm)
+    output_data = Dense(units=d_model, activation="softmax")(blstm)
+
+#     optimizer = RMSprop(learning_rate=learning_rate)
+    optimizer = Adam(learning_rate=learning_rate)
+    
+    model = Model(inputs=input_data, outputs=output_data)
+    model.compile(optimizer=optimizer, loss=ctc_loss_lambda_func)
+
+    return model
+
 
 def build_model(input_size, d_model, learning_rate=3e-4):
     """
