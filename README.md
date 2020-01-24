@@ -44,7 +44,19 @@ This will open a OpenCV window showing the preprocessed images (50 samples) one 
 
 You can train with three different models, Minh's model (achieving WER 0.188 and SER 0.89), Quoc's model or combined model (convolution layers from Minh's and Quoc's attention layers)
 
-For Minh's model:
+For Minh's model (consisting of convolutional layers and bidirectional LSTM):
+ Convolutional Recurrent Neural Network by Puigcerver et al.
+
+    Reference:
+        Joan Puigcerver.
+        Are multidimensional recurrent layers really necessary for handwritten text recognition?
+        In: Document Analysis and Recognition (ICDAR), 2017 14th
+        IAPR International Conference on, vol. 1, pp. 67–72. IEEE (2017)
+
+        Carlos Mocholí Calvo and Enrique Vidal Ruiz.
+        Development and experimentation of a deep learning system for convolutional and recurrent neural networks
+        Escola Tècnica Superior d’Enginyeria Informàtica, Universitat Politècnica de València, 2018
+
 ```
 python train.py --train
 ```
@@ -52,7 +64,7 @@ or for combined model:
 ```
 python train.py --trainattn
 ```
-or for Quoc's model:
+or for Quoc's model (base model VGG16, attention layer and bidirectional LSTM):
 ```
 python train.py --trainquoc
 ```
