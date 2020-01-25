@@ -70,10 +70,14 @@ python train.py --trainquoc
 ```
 Every time training or testing is done, stats will be saved in `train_stats.txt` or `evaluate_stats.txt`
 
-For testing, run:
+For testing on Minh's and combined model, run:
 
 ```
 python train.py --test --path [path to the test images]
+```
+or testing on Quoc's model (because of different base layer input shape):
+```
+python train.py --testquoc --path [path to the test images]
 ```
 
 Example `python3 train.py --test --path ../data/test`. Then predicted texts and the ground true texts will be stored in `predictions_test.txt`.
