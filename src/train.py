@@ -22,6 +22,7 @@ charset_base = "¶ #'()+,-./:0123456789ABCDEFGHIJKLMNOPQRSTUVWXYabcdeghiklmnopqr
 vocab_size = len(charset_base)
 MAX_LABEL_LENGTH = 128
 INPUT_SIZE = (2048, 128, 1)
+INPUT_SIZE_Q = (2048, 128, 3)
 PAD_TK = "¶"
 
 
@@ -51,6 +52,21 @@ def load_and_preprocess_image(path, label):
     # label = text_to_labels(label)
     # label = pad_sequences(label, maxlen=MAX_LABEL_LENGTH, padding='post')
     return preprocess_image(path), label
+
+def preprocess_image_quoc(path):
+    image = tf.io.read_file(path)
+    image = tf.image.decode_jpeg(image, channels=1)
+    image = tf.image.grayscale_to_rgb(image)
+    image = tf.image.convert_image_dtype(image, tf.float32)/255
+    image = tf.image.per_image_standardization(image)
+    # image = tf.stack([image, image, image])
+    return image
+    
+
+def load_and_preprocess_image_quoc(path, label):
+    # label = text_to_labels(label)
+    # label = pad_sequences(label, maxlen=MAX_LABEL_LENGTH, padding='post')
+    return preprocess_image_quoc(path), label
 
 def cv2_augmentation(img,
                     rotation_range=3,
@@ -151,6 +167,29 @@ def build_dataset(type_, cache=False, augment=False, training=True):
 
     return ds, steps_per_epoch, labels
 
+def build_dataset_quoc(type_, cache=False, augment=False, training=True):
+    DATA_FOLDER = os.path.join('..', 'data', type_)
+    ds = tf.data.Dataset.list_files(os.path.join(DATA_FOLDER, '*'))
+    labels = get_label(type_)
+    
+    all_image_paths = [str(item) for item in pathlib.Path(DATA_FOLDER).glob('*') if item.name in labels]
+    labels = [labels[pathlib.Path(path).name] for path in all_image_paths]
+    labels = [prep.text_standardize(label) for label in labels]
+    all_image_labels = [text_to_labels(label) for label in labels]
+    all_image_labels = pad_sequences(all_image_labels, maxlen=MAX_LABEL_LENGTH, padding='post')
+    n_samples = len(all_image_labels)
+    steps_per_epoch = tf.math.ceil(n_samples/BATCH_SIZE)
+
+    ds = tf.data.Dataset.from_tensor_slices((all_image_paths, all_image_labels))
+    ds = ds.map(load_and_preprocess_image_quoc, num_parallel_calls=AUTOTUNE)
+
+    if training:
+        ds = prepare_for_training(ds, cache=cache, shuffle_buffer_size=n_samples, augment=True)
+    else:
+        ds = prepare_for_testing(ds)
+
+    return ds, steps_per_epoch, labels    
+
 def decode_batch(prediction):
     result = []
     for j in range(out.shape[0]):
@@ -169,15 +208,16 @@ if __name__ == "__main__":
     parser.add_argument("--trainquoc", action="store_true", default=False)
     parser.add_argument("--train", action="store_true", default=False)
     parser.add_argument("--test", action="store_true", default=False)
+    parser.add_argument("--testquoc", action="store_true", default=False)
     parser.add_argument("--path", type=str, required=False) # path to test data
     args = parser.parse_args()
     checkpoint = './checkpoint_weights.hdf5'
 
     #Training with Quoc's model
     if args.trainquoc:
-        train_ds, num_steps_train, _ = build_dataset('train', cache=True)
-        test_ds, num_steps_val, _ = build_dataset('test', training=False)
-        model = mb.build_model_quoc(input_size=INPUT_SIZE, d_model=vocab_size+1, learning_rate=0.001)
+        train_ds, num_steps_train, _ = build_dataset_quoc('train', cache=True)
+        test_ds, num_steps_val, _ = build_dataset_quoc('test', training=False)
+        model = mb.build_model_quoc(input_size=INPUT_SIZE_Q, d_model=vocab_size+1, learning_rate=0.001)
 #         model.load_weights(checkpoint)
         model.summary()
         batch_stats_callback = mb.CollectBatchStats()
@@ -301,6 +341,67 @@ if __name__ == "__main__":
         type_ = pathlib.Path(args.path).name
         ds, num_steps, labels = build_dataset(type_, training=False)
         model = mb.build_model(input_size=INPUT_SIZE, d_model=vocab_size+1)
+        model.load_weights(checkpoint)
+        model.summary()
+
+        start_time = datetime.datetime.now()
+
+        predictions = model.predict(ds, steps=num_steps)
+
+        # CTC decode
+        ctc_decode = True
+        if ctc_decode:
+            predicts, probabilities = [], []
+            x_test = np.array(predictions)
+            x_test_len = [MAX_LABEL_LENGTH for _ in range(len(x_test))]
+
+            decode, log = K.ctc_decode(x_test,
+                                    x_test_len,
+                                    greedy=True,
+                                    beam_width=10,
+                                    top_paths=1)
+
+            probabilities = [np.exp(x) for x in log]
+            predicts = [[[int(p) for p in x if p != -1] for x in y] for y in decode]
+            predicts = np.swapaxes(predicts, 0, 1)
+            predicts = [labels_to_text(label[0]) for label in predicts]
+        else:
+            predicts = decode_batch(predictions)
+
+        total_time = datetime.datetime.now() - start_time
+        print(predicts[:10])
+        print(labels[:10])
+#         predicts = [x.replace(PAD_TK, "") for x in predicts]
+        prediction_file = os.path.join('.', 'predictions_{}.txt'.format(type_))
+
+        with open(prediction_file, "w") as f:
+            for pd, gt in zip(predicts, labels):
+                f.write("Y {}\nP {}\n".format(gt, pd))
+
+        evaluate = evaluation.ocr_metrics(predicts=predicts,
+                                          ground_truth=labels,
+                                          norm_accentuation=False,
+                                          norm_punctuation=False)
+
+        e_corpus = "\n".join([
+            "Total test images:    {}".format(len(labels)),
+            "Total time:           {}".format(total_time),
+            "Metrics:",
+            "Character Error Rate: {}".format(evaluate[0]),
+            "Word Error Rate:      {}".format(evaluate[1]),
+            "Sequence Error Rate:  {}".format(evaluate[2]),
+        ])
+
+        with open("evaluate_stats.txt", "w") as lg:
+            lg.write(e_corpus)
+            print(e_corpus)
+
+    # Testing for Quoc
+    elif args.testquoc:
+        assert os.path.isfile(checkpoint) and os.path.exists(args.path)
+        type_ = pathlib.Path(args.path).name
+        ds, num_steps, labels = build_dataset(type_, training=False)
+        model = mb.build_model(input_size=INPUT_SIZE_Q, d_model=vocab_size+1)
         model.load_weights(checkpoint)
         model.summary()
 
