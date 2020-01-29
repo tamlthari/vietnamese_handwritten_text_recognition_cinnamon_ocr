@@ -1,6 +1,6 @@
 # Cinamon AI Challenge - Handwritten text recognition 
 
-This implementation follows Do Hai Minh's [github](https://github.com/dhminh1024/htr_vietnamese) closely and adapts from [@pbcquoc](https://pbcquoc.github.io/vietnamese-ocr/), the winner on the challenge.
+This implementation follows Do Hai Minh's [github](https://github.com/dhminh1024/htr_vietnamese) closely and adapts from [@pbcquoc](https://pbcquoc.github.io/vietnamese-ocr/), the winner on the challenge. Our version of Quoc's model does not perform as well as Minh's due to the fact that we did not implement Beam Search that Quoc has implemented.
 
 The data can be download at [Cinnamon AI Challenge](https://drive.google.com/drive/folders/1Qa2YA6w6V5MaNV-qxqhsHHoYFRK5JB39)
 
